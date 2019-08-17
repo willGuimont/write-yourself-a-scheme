@@ -9,6 +9,8 @@ import Data.Complex
 import Data.Ratio
 import Lib
 import Numeric
+import Data.Array (Array)
+import Data.Array.Base (listArray)
 
 data LispVal
   = Atom String
@@ -21,6 +23,7 @@ data LispVal
   | Float Double
   | Ratio Rational
   | Complex (Complex Double)
+  | Vector (Array Int LispVal)
 
 symbol :: Parser Char
 symbol = oneOf "!$%&|*+-/:<=>?@^_~"
@@ -60,6 +63,18 @@ parseQuoted = do
   char '\''
   x <- parseExpr
   return $ List [Atom "quote", x]
+
+parseQuasiQuoted :: Parser LispVal
+parseQuasiQuoted = do
+  char '`'
+  x <- parseExpr
+  return $ List [Atom "quasiquote", x]
+
+parseUnquoted :: Parser LispVal
+parseUnquoted = do
+  char ','
+  x <- parseExpr
+  return $ List [Atom "unquote", x]
 
 parseDecimal :: Parser LispVal
 parseDecimal = parseDecimal1 <|> parseDecimal2
@@ -177,10 +192,25 @@ parseComplex = do
   y <- try parseFloat <|> parseDecimal
   char 'i'
   return $ Complex (toDouble x :+ toDouble y)
+  
+parseVector :: Parser LispVal 
+parseVector = do
+  string "#("
+  x <- parseVector'
+  char ')'
+  return x
+
+parseVector' :: Parser LispVal
+parseVector' = do
+  values <- sepBy parseExpr spaces
+  return $ Vector (listArray (0, length values - 1) values)
 
 parseExpr :: Parser LispVal
 parseExpr =
   parseAtom <|> parseString <|> try parseFloat <|> parseRatio <|> parseComplex <|> try parseNumber <|> parseQuoted <|>
+  parseQuasiQuoted <|>
+  parseUnquoted <|>
+  parseVector <|>
   parseAnyList <|>
   try parseBool <|>
   try parseCharacter
