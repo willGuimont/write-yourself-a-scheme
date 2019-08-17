@@ -197,7 +197,8 @@ parseVector' = do
 
 parseExpr :: Parser LispVal
 parseExpr =
-  parseAtom <|> parseString <|> try parseFloat <|> parseRatio <|> parseComplex <|> try parseNumber <|> parseQuoted <|>
+  parseAtom <|> parseString <|> try parseFloat <|> try parseRatio <|> try parseComplex <|> try parseNumber <|>
+  parseQuoted <|>
   parseQuasiQuoted <|>
   parseUnquoted <|>
   parseVector <|>

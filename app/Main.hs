@@ -6,13 +6,14 @@ import Parsing
 import System.Environment
 import Text.ParserCombinators.Parsec
 
-readExpr :: String -> String
+import Types
+import Evaluation
+
+readExpr :: String -> LispVal
 readExpr input =
   case parse parseExpr "lisp" input of
-    Left err -> "No match: " ++ show err
-    Right _ -> "Found value"
+    Left err -> String $ "No match: " ++ show err
+    Right x -> x
 
 main :: IO ()
-main = do
-  (expr:_) <- getArgs
-  putStrLn $ readExpr expr
+main = getArgs >>= print . eval . readExpr . head
