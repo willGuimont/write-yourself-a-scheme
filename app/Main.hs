@@ -2,18 +2,23 @@
 
 module Main where
 
+import Control.Monad.Except
 import Parsing
 import System.Environment
 import Text.ParserCombinators.Parsec
 
-import Types
 import Evaluation
+import Types
+import Errors
 
-readExpr :: String -> LispVal
+readExpr :: String -> ThrowsError LispVal
 readExpr input =
   case parse parseExpr "lisp" input of
-    Left err -> String $ "No match: " ++ show err
-    Right x -> x
+    Left err -> throwError $ Parser err
+    Right x -> return x
 
 main :: IO ()
-main = getArgs >>= print . eval . readExpr . head
+main = do
+  args <- getArgs
+  let evaluated = fmap show $ readExpr (head args) >>= eval
+  putStrLn $ extractValue $ trapError evaluated
