@@ -8,11 +8,11 @@ module Evaluation
 import Control.Monad.Except
 import Data.Char (toLower)
 
+import Environment
 import Errors
 import Types
 
 {-
-
   = Atom String
   | List [LispVal]
   | DottedList [LispVal] LispVal
@@ -24,24 +24,26 @@ import Types
   | Ratio Rational
   | Complex (Complex Double)
   | Vector (Array Int LispVal)
-
 -}
 -- TODO missing evals
-eval :: LispVal -> ThrowsError LispVal
-eval x@(String _) = return x
-eval x@(Number _) = return x
-eval x@(Bool _) = return x
-eval (List [Atom "quote", x]) = return x
-eval (List [Atom "if", p, conseq, alt]) = do
-  res <- eval p
+eval :: Env -> LispVal -> IOThrowsError LispVal
+eval _ x@(String _) = return x
+eval _ x@(Number _) = return x
+eval _ x@(Bool _) = return x
+eval env (Atom name) = getVar env name
+eval _ (List [Atom "quote", x]) = return x
+eval env (List [Atom "if", p, conseq, alt]) = do
+  res <- eval env p
   case res of
-    Bool False -> eval alt
-    Bool True -> eval conseq
+    Bool False -> eval env alt
+    Bool True -> eval env conseq
     _ -> throwError $ TypeMismatch "bool" p
-eval form@(List (Atom "cond":clauses)) = cond form clauses
-eval form@(List (Atom "case":key:clauses)) = cases form key clauses
-eval (List (Atom f:xs)) = mapM eval xs >>= apply f
-eval bad = throwError $ BadSpecialForm "Unrecognized special form" bad
+eval env (List [Atom "set!", Atom var, form]) = eval env form >>= setVar env var
+eval env (List [Atom "define", Atom var, form]) = eval env form >>= defineVar env var
+eval env form@(List (Atom "cond":clauses)) = cond env form clauses
+eval env form@(List (Atom "case":key:clauses)) = cases env form key clauses
+eval env (List (Atom f:xs)) = mapM (eval env) xs >>= liftThrows . apply f
+eval _ bad = throwError $ BadSpecialForm "Unrecognized special form" bad
 
 apply :: String -> [LispVal] -> ThrowsError LispVal
 apply f xs = maybe (throwError $ NotFunction "Unrecognized primitive function args" f) ($ xs) (lookup f primitives)
@@ -83,27 +85,27 @@ primitives =
   , ("equal?", equal)
   ]
 
-cond :: LispVal -> [LispVal] -> Either LispError LispVal
-cond form clauses =
+cond :: Env -> LispVal -> [LispVal] -> IOThrowsError LispVal
+cond env form clauses =
   if null clauses
     then throwError $ BadSpecialForm "no true clauses in cond expression: " form
     else case head clauses of
-           List [Atom "else", expr] -> eval expr
-           List [t, expr] -> eval $ List [Atom "if", t, expr, List (Atom "cond" : tail clauses)]
+           List [Atom "else", expr] -> eval env expr
+           List [t, expr] -> eval env $ List [Atom "if", t, expr, List (Atom "cond" : tail clauses)]
            _ -> throwError $ BadSpecialForm "ill-formed cond expression: " form
 
-cases :: LispVal -> LispVal -> [LispVal] -> Either LispError LispVal
-cases form key clauses =
+cases :: Env -> LispVal -> LispVal -> [LispVal] -> IOThrowsError LispVal
+cases env form key clauses =
   if null clauses
     then throwError $ BadSpecialForm "no true clause in case expression: " form
     else case head clauses of
-           List (Atom "else":exprs) -> last <$> mapM eval exprs
+           List (Atom "else":exprs) -> last <$> mapM (eval env) exprs
            List (List xs:exprs) -> do
-             result <- eval key
-             equality <- mapM (\x -> eqv [result, x]) xs
+             result <- eval env key
+             equality <- liftThrows $ mapM (\x -> eqv [result, x]) xs
              if Bool True `elem` equality
-               then last <$> mapM eval exprs
-               else eval $ List (Atom "case" : key : tail clauses)
+               then last <$> mapM (eval env) exprs
+               else eval env $ List (Atom "case" : key : tail clauses)
            _ -> throwError $ BadSpecialForm "ill-formed case expression: " form
 
 car :: [LispVal] -> ThrowsError LispVal
@@ -152,8 +154,7 @@ equal [l1@(List _), l2@(List _)] = eqvList equal [l1, l2]
 equal [DottedList xs x, DottedList ys y] = equal [List $ xs ++ [x], List $ ys ++ [y]]
 equal [arg1, arg2] = do
   primitiveEquals <-
-    or <$>
-    mapM (unpackEquals arg1 arg2) [AnyUnpacker unpackNum, AnyUnpacker unpackStr, AnyUnpacker unpackBool]
+    or <$> mapM (unpackEquals arg1 arg2) [AnyUnpacker unpackNum, AnyUnpacker unpackStr, AnyUnpacker unpackBool]
   eqvEquals <- eqv [arg1, arg2]
   return $
     Bool

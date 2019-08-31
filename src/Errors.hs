@@ -18,7 +18,7 @@ data LispError
 
 instance Show LispError where
   show = showError
- 
+
 showError :: LispError -> String
 showError (UnboundVar message varname) = message ++ ": " ++ varname
 showError (BadSpecialForm message form) = message ++ ": " ++ show form
@@ -36,3 +36,12 @@ trapError action = catchError action (return . show)
 extractValue :: ThrowsError a -> a
 extractValue (Right x) = x
 extractValue _ = undefined
+
+type IOThrowsError = ExceptT LispError IO
+
+liftThrows :: ThrowsError a -> IOThrowsError a
+liftThrows (Left err) = throwError err
+liftThrows (Right x) = return x
+
+runIOThrows :: IOThrowsError String -> IO String
+runIOThrows f = extractValue <$> runExceptT (trapError f)
