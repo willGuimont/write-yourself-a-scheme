@@ -1,13 +1,12 @@
+{-# OPTIONS -Wall #-}
+
 module Environment where
 
 import Control.Monad.Except
 import Data.IORef
 import Data.Maybe
 
-import Errors
 import Types
-
-type Env = IORef [(String, IORef LispVal)]
 
 nullEnv :: IO Env
 nullEnv = newIORef []
@@ -40,7 +39,7 @@ defineVar envRef var value = do
 bindVars :: Env -> [(String, LispVal)] -> IO Env
 bindVars envRef bindings = readIORef envRef >>= extendEnv bindings >>= newIORef
   where
-    extendEnv bindings env = fmap (++ env) (mapM addBinding bindings)
+    extendEnv bs env = fmap (++ env) (mapM addBinding bs)
     addBinding (var, value) = do
       ref <- newIORef value
       return (var, ref)

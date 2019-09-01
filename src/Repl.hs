@@ -1,3 +1,5 @@
+{-# OPTIONS -Wall #-}
+
 module Repl
   ( runRepl
   , evalAndPrint
@@ -7,7 +9,6 @@ module Repl
 import Control.Monad.Except
 import Data.String.Utils
 
-import System.Environment
 import System.IO
 import Text.ParserCombinators.Parsec
 
@@ -43,7 +44,7 @@ until_ p prompt action = do
     else action res >> until_ p prompt action
 
 runOne :: String -> IO ()
-runOne expr = nullEnv >>= flip evalAndPrint expr
+runOne expr = primitiveBindings >>= flip evalAndPrint expr
 
 runRepl :: IO ()
-runRepl = nullEnv >>= until_ (== "quit") (readPrompt "List>>> ") . evalAndPrint
+runRepl = primitiveBindings >>= until_ (== "quit") (readPrompt "List>>> ") . evalAndPrint
