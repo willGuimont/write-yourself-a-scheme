@@ -3,7 +3,6 @@
 module Errors where
 
 import Control.Monad.Except
-import Text.ParserCombinators.Parsec
 
 import Types
 

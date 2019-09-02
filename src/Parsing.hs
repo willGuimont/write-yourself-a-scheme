@@ -2,10 +2,13 @@
 
 module Parsing
   ( parseExpr
+  , readExpr
+  , readExprList
   ) where
 
 import Text.ParserCombinators.Parsec hiding (spaces)
 
+import Control.Monad.Except
 import Data.Array.Base (listArray)
 import Data.Char (toLower, toUpper)
 import Data.Complex
@@ -205,3 +208,15 @@ parseExpr =
   parseAnyList <|>
   try parseBool <|>
   try parseCharacter
+
+readOrThrow :: Parser a -> String -> ThrowsError a
+readOrThrow parser input =
+  case parse parser "lisp" input of
+    Left err -> throwError $ Parser err
+    Right x -> return x
+
+readExpr :: String -> ThrowsError LispVal
+readExpr = readOrThrow parseExpr
+
+readExprList :: String -> ThrowsError [LispVal]
+readExprList = readOrThrow (endBy parseExpr spaces)

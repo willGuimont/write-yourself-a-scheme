@@ -6,23 +6,15 @@ module Repl
   , runOne
   ) where
 
-import Control.Monad.Except
 import Data.String.Utils
 
 import System.IO
-import Text.ParserCombinators.Parsec
 
 import Environment
 import Errors
 import Evaluation
 import Parsing
 import Types
-
-readExpr :: String -> ThrowsError LispVal
-readExpr input =
-  case parse parseExpr "lisp" input of
-    Left err -> throwError $ Parser err
-    Right x -> return x
 
 flushStr :: String -> IO ()
 flushStr str = putStr str >> hFlush stdout
@@ -43,8 +35,10 @@ until_ p prompt action = do
     then return ()
     else action res >> until_ p prompt action
 
-runOne :: String -> IO ()
-runOne expr = primitiveBindings >>= flip evalAndPrint expr
+runOne :: [String] -> IO ()
+runOne args = do
+  env <- primitiveBindings >>= flip bindVars [("args", List $ map String $ drop 1 args)]
+  runIOThrows (show <$> eval env (List [Atom "load", String (head args)])) >>= hPutStrLn stderr
 
 runRepl :: IO ()
 runRepl = primitiveBindings >>= until_ (== "quit") (readPrompt "List>>> ") . evalAndPrint

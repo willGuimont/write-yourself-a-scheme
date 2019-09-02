@@ -11,6 +11,8 @@ import Data.Maybe (isNothing)
 import Environment
 import Errors
 import EvaluationUtils
+import Parsing
+import System.IO
 import Types
 
 {-
@@ -39,22 +41,24 @@ eval env (List [Atom "if", p, conseq, alt]) = do
     Bool False -> eval env alt
     Bool True -> eval env conseq
     _ -> throwError $ TypeMismatch "bool" p
-eval env (List [Atom "set!", Atom var, form]) = eval env form >>= setVar env var
-eval env (List [Atom "define", Atom var, form]) = eval env form >>= defineVar env var
 eval env form@(List (Atom "cond":clauses)) = cond env form clauses
 eval env form@(List (Atom "case":key:clauses)) = cases env form key clauses
+eval env (List [Atom "set!", Atom var, form]) = eval env form >>= setVar env var
+eval env (List [Atom "define", Atom var, form]) = eval env form >>= defineVar env var
 eval env (List (Atom "define":List (Atom var:ps):b)) = makeNormalFunc env ps b >>= defineVar env var
 eval env (List (Atom "define":DottedList (Atom var:ps) varargs:b)) = makeVarArgs varargs env ps b >>= defineVar env var
 eval env (List (Atom "lambda":List ps:b)) = makeNormalFunc env ps b
 eval env (List (Atom "lambda":DottedList ps var:b)) = makeVarArgs var env ps b
 eval env (List (Atom "lambda":var@(Atom _):b)) = makeVarArgs var env [] b
-eval env (List (f:xs)) = do
-  ef <- eval env f
-  val <- mapM (eval env) xs
-  apply ef val
+eval env (List [Atom "load", String filename]) = load filename >>= fmap last . mapM (eval env)
+eval env (List (function:args)) = do
+  func <- eval env function
+  argVals <- mapM (eval env) args
+  apply func argVals
 eval _ bad = throwError $ BadSpecialForm "Unrecognized special form" bad
 
 apply :: LispVal -> [LispVal] -> IOThrowsError LispVal
+apply (IOFunc f) xs = f xs
 apply (PrimitiveFunc f) xs = liftThrows $ f xs
 apply (Func ps varargs b env) args =
   if num ps /= num args && isNothing varargs
@@ -68,6 +72,7 @@ apply (Func ps varargs b env) args =
       case arg of
         Just argName -> liftIO $ bindVars e [(argName, List remainingArgs)]
         Nothing -> return e
+apply f _ = throwError $ NotFunction "Can't apply" $ show f
 
 makeFunc :: Monad m => Maybe String -> Env -> [LispVal] -> [LispVal] -> m LispVal
 makeFunc varargs env ps b = return $ Func (map showVal ps) varargs b env
@@ -79,9 +84,9 @@ makeVarArgs :: Monad m => LispVal -> Env -> [LispVal] -> [LispVal] -> m LispVal
 makeVarArgs = makeFunc . Just . showVal
 
 primitiveBindings :: IO Env
-primitiveBindings = nullEnv >>= flip bindVars (map makePrimitiveFunc primitives)
+primitiveBindings = nullEnv >>= flip bindVars (map (make IOFunc) ioPrimitives ++ map (make PrimitiveFunc) primitives)
   where
-    makePrimitiveFunc (var, func) = (var, PrimitiveFunc func)
+    make constructor (var, func) = (var, constructor func)
 
 primitives :: [(String, [LispVal] -> ThrowsError LispVal)]
 primitives =
@@ -186,3 +191,50 @@ equal [arg1, arg2] = do
        let (Bool x) = eqvEquals
         in x)
 equal badArgList = throwError $ NumArgs 2 badArgList
+
+ioPrimitives :: [(String, [LispVal] -> IOThrowsError LispVal)]
+ioPrimitives =
+  [ ("apply", applyProc)
+  , ("open-input-file", makePort ReadMode)
+  , ("open-output-file", makePort WriteMode)
+  , ("close-input-port", closePort)
+  , ("close-output-port", closePort)
+  , ("read", readProc)
+  , ("write", writeProc)
+  , ("read-contents", readContents)
+  , ("read-all", readAll)
+  ]
+
+applyProc :: [LispVal] -> IOThrowsError LispVal
+applyProc [f, List args] = apply f args
+applyProc (f:args) = apply f args
+applyProc [] = throwError $ NotFunction "[] is not a function" []
+
+makePort :: IOMode -> [LispVal] -> IOThrowsError LispVal
+makePort mode [String filename] = fmap Port $ liftIO $ openFile filename mode
+makePort _ xs = throwError $ NumArgs 1 xs
+
+closePort :: [LispVal] -> IOThrowsError LispVal
+closePort [Port port] = liftIO $ hClose port >> return (Bool True)
+closePort _ = return $ Bool False
+
+readProc :: [LispVal] -> IOThrowsError LispVal
+readProc [] = readProc [Port stdin]
+readProc [Port port] = liftIO (hGetLine port) >>= liftThrows . readExpr
+readProc xs = throwError $ NumArgs 1 xs
+
+writeProc :: [LispVal] -> IOThrowsError LispVal
+writeProc [obj] = writeProc [obj, Port stdout]
+writeProc [obj, Port port] = liftIO $ hPrint port obj >> return (Bool True)
+writeProc xs = throwError $ NumArgs 2 xs
+
+readContents :: [LispVal] -> IOThrowsError LispVal
+readContents [String filename] = List <$> load filename
+readContents xs = throwError $ NumArgs 1 xs
+
+load :: String -> IOThrowsError [LispVal]
+load filename = liftIO (readFile filename) >>= liftThrows . readExprList
+
+readAll :: [LispVal] -> IOThrowsError LispVal
+readAll [String filename] = List <$> load filename
+readAll xs = throwError $ NumArgs 1 xs

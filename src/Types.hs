@@ -8,6 +8,7 @@ import Data.Complex
 import Data.Foldable
 import Data.IORef
 import Text.ParserCombinators.Parsec
+import System.IO (Handle)
 
 data LispVal
   = Atom String
@@ -28,6 +29,8 @@ data LispVal
       , body :: [LispVal]
       , closure :: Env
       }
+  | IOFunc ([LispVal] -> IOThrowsError LispVal)
+  | Port Handle
 
 instance Show LispVal where
   show = showVal
@@ -53,6 +56,8 @@ showVal Func {params = args, vararg = varargs} =
      Nothing -> ""
      Just arg -> " . " ++ arg) ++
   ") ...)"
+showVal (Port _) = "<IO port>"
+showVal (IOFunc _) = "<IO primitive>"
 
 data LispError
   = NumArgs Integer [LispVal]
