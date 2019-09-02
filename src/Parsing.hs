@@ -204,7 +204,7 @@ parseExpr =
   parseQuoted <|>
   parseQuasiQuoted <|>
   parseUnquoted <|>
-  parseVector <|>
+  try parseVector <|>
   parseAnyList <|>
   try parseBool <|>
   try parseCharacter
